@@ -1,0 +1,29 @@
+# ---- .NET / Visual Studio ----
+bin/
+obj/
+dist/
+dist-selfcontained/
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.csproj.user
+project.lock.json
+artifacts/
+
+# ---- 构建产物（自包含发布会上百 MB，别提交）----
+publish/
+*.publish.xml
+*.zip
+
+# ---- 运行时产物 ----
+data/
+*.log
+log.txt
+*.bak
+
+# ---- 其它 ----
+.DS_Store
+Thumbs.db
+desktop.ini
