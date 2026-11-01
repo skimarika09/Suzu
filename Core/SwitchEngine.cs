@@ -490,10 +490,15 @@ namespace Suzu.Core
             HandleOffPrimary(conn, nets, manual, level, null);
         }
 
-        /// <summary>扫描结果里第一个"已知网络"（主用或任一备用）的 SSID；没有返回 null。</summary>
+        /// <summary>
+        /// 扫描结果里第一个"已知网络"（主用或任一备用）的 SSID；没有返回 null。
+        /// 主用与 HandleOffPrimary 的候选闸门对齐（信号达标才算"回来了"），
+        /// 否则弱信号主用会造成 解除→连不上→再进降级 的循环；备用不做信号闸（与候选一致）。
+        /// </summary>
         private string FirstKnownNetworkInRange(List<AvailableNetwork> nets)
         {
-            if (Find(nets, _cfg.PrimarySsid) != null) return _cfg.PrimarySsid;
+            var primaryNet = Find(nets, _cfg.PrimarySsid);
+            if (primaryNet != null && SignalAccepted(primaryNet.SignalQuality)) return _cfg.PrimarySsid;
             foreach (var b in _cfg.BackupSsids)
             {
                 if (Find(nets, b) != null) return b;
@@ -992,10 +997,12 @@ namespace Suzu.Core
             {
                 var wait = BackoffSeconds(++_backupFailCount, 30, 300);
                 _nextBackupAttempt = NowMs() + wait * 1000L;
-                _backupFailReason = string.Format("{0} 个备用都不在扫描范围", backups.Count);
+                _backupFailReason = backups.Count > 0
+                    ? string.Format("{0} 个备用都不在扫描范围", backups.Count)
+                    : "主用不在扫描范围或信号不足";
                 SetStatus(string.Format("{0}｜{1}，{2} 秒后重试",
                     conn.Connected ? "已连接 " + conn.Ssid : "WiFi 已断开", _backupFailReason, wait));
-                AppLog.Info("所有备用网络都不在扫描结果中，等待重试。");
+                AppLog.Info("所有已知网络都不在可连范围（" + _backupFailReason + "），等待重试。");
                 TryEnterTotalFailure(conn);
                 return;
             }
@@ -1018,7 +1025,7 @@ namespace Suzu.Core
                 SetStatus("🔴 网络已断开，正在切换 " + label + "（信号 " + net.SignalQuality + "%）…");
                 AppLog.Info("尝试 " + label + "，信号 " + net.SignalQuality + "%");
 
-                var outcome = ConnectAndVerify(net.Ssid, "切换备用");
+                var outcome = ConnectAndVerify(net.Ssid, toPrimary ? "直连主用" : "切换备用");
                 if (outcome.AssociatedOk && outcome.LinkOk)
                 {
                     if (!outcome.InternetOk)

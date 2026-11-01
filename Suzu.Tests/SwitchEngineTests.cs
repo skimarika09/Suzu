@@ -313,6 +313,38 @@ namespace Suzu.Tests
         }
 
         [Fact]
+        public void 主用可见但信号不足_降级不解除_信号恢复后才连()
+        {
+            // 复查发现并修复的震荡路径：TF 解除判定若不看信号阈值，
+            // 弱信号主用会造成 解除→连不上→再进降级 的循环（每轮进降级都弹气泡）。
+            _config.SignalThresholdPercent = 50;
+            _wifi.ConnectedSsid = null;
+            Start();
+
+            AssertEventually(() => _engine.StatusText.Contains("秒后重试"), 5000, "第一轮失败退避（30 秒）");
+            _engine.CheckNow();
+            AssertEventually(() => _engine.StatusText.Contains("60 秒后重试"), 5000, "第二轮失败退避（60 秒）");
+            _engine.CheckNow();
+            AssertEventually(() => _engine.State == EngineState.TotalFailure, 8000, "进入 TOTAL_FAILURE");
+
+            // 主用回来了但信号只有 30%（低于阈值 50%）：不得解除降级，更不得发起连接
+            _wifi.Visible.Add(Net(Primary, 30));
+            _wifi.RaiseNotified();
+            Thread.Sleep(2000);
+            Assert.Equal(EngineState.TotalFailure, _engine.State);
+            lock (_wifi.ConnectLog) { Assert.Empty(_wifi.ConnectLog); }
+
+            // 信号恢复到 80%：先唤醒一次让引擎看到（起算 15 秒稳定窗），期满再唤醒触发解除
+            _wifi.Visible.Clear();
+            _wifi.Visible.Add(Net(Primary, 80));
+            _wifi.RaiseNotified();
+            AssertEventually(() => _engine.StatusText.Contains("确认稳定中"), 5000, "看到恢复的信号并开始确认稳定");
+            Thread.Sleep(16000);
+            _wifi.RaiseNotified();
+            AssertEventually(() => _engine.CurrentSsid == Primary, 15000, "信号恢复后解除降级并连上主用");
+        }
+
+        [Fact]
         public void 手动暂停_状态显示已暂停_到期自动恢复并落盘()
         {
             _wifi.Visible.Add(Net(Primary, 80));
