@@ -26,11 +26,14 @@
     <EmbeddedResource Include="Assets\app.ico" LogicalName="Suzu.Assets.app.ico" />
   </ItemGroup>
 
-  <!-- tools/ 下的辅助工程（文档截图 harness）不参与主程序编译 -->
+  <!-- tools/ 下的辅助工程（文档截图 harness）与 Suzu.Tests/（单元测试工程）不参与主程序编译 -->
   <ItemGroup>
     <Compile Remove="tools\**" />
     <EmbeddedResource Remove="tools\**" />
     <None Remove="tools\**" />
+    <Compile Remove="Suzu.Tests\**" />
+    <EmbeddedResource Remove="Suzu.Tests\**" />
+    <None Remove="Suzu.Tests\**" />
   </ItemGroup>
 
   <!-- 单文件发布：dotnet publish -c Release -->

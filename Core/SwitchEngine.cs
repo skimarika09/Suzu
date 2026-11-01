@@ -943,7 +943,7 @@ namespace Suzu.Core
             }
 
             var backups = _cfg.BackupSsids ?? new List<string>();
-            if (backups.Count == 0)
+            if (backups.Count == 0 && Find(nets, _cfg.PrimarySsid) == null)
             {
                 SetStatus(conn.Connected
                     ? string.Format("已连接 {0}（非主用，且未配置备用网络）", conn.Ssid)
@@ -970,8 +970,17 @@ namespace Suzu.Core
                 return;
             }
 
-            // 按优先级挑出此刻在范围内的备用（跳过刚判定为坏的那个）
+            // 按优先级挑出此刻在范围内的候选（跳过刚判定为坏的那个）。
+            // 主用本身就是最高优先级候选：掉线/连着死网时主用在范围内应直连主用。
+            // 尤其主备全关进入 TOTAL_FAILURE 后**只有主用回来**（如重新打开手机热点）的场景，
+            // 旧逻辑只试备用会永远连不上主用——README 承诺的是"重开任一网络自动恢复"。
             var candidates = new List<AvailableNetwork>();
+            bool skipPrimary = !string.IsNullOrEmpty(skipSsid) && SsidEquals(_cfg.PrimarySsid, skipSsid);
+            if (!skipPrimary)
+            {
+                var primaryNet = Find(nets, _cfg.PrimarySsid);
+                if (primaryNet != null && SignalAccepted(primaryNet.SignalQuality)) candidates.Add(primaryNet);
+            }
             foreach (var b in backups)
             {
                 if (!string.IsNullOrEmpty(skipSsid) && SsidEquals(b, skipSsid)) continue;
@@ -1004,8 +1013,10 @@ namespace Suzu.Core
             foreach (var net in candidates)
             {
                 if (_stop) return;
-                SetStatus("🔴 网络已断开，正在切换 " + _cfg.DescribeBackup(net.Ssid) + "（信号 " + net.SignalQuality + "%）…");
-                AppLog.Info("尝试 " + _cfg.DescribeBackup(net.Ssid) + "，信号 " + net.SignalQuality + "%");
+                bool toPrimary = SsidEquals(net.Ssid, _cfg.PrimarySsid);
+                var label = toPrimary ? ("主用 " + net.Ssid) : _cfg.DescribeBackup(net.Ssid);
+                SetStatus("🔴 网络已断开，正在切换 " + label + "（信号 " + net.SignalQuality + "%）…");
+                AppLog.Info("尝试 " + label + "，信号 " + net.SignalQuality + "%");
 
                 var outcome = ConnectAndVerify(net.Ssid, "切换备用");
                 if (outcome.AssociatedOk && outcome.LinkOk)
@@ -1013,7 +1024,7 @@ namespace Suzu.Core
                     if (!outcome.InternetOk)
                     {
                         RaiseNotify("已连接但无互联网",
-                            _cfg.DescribeBackup(net.Ssid) + " 的网关正常，但探测不到公网。若是公共 WiFi 请先完成认证。");
+                            label + " 的网关正常，但探测不到公网。若是公共 WiFi 请先完成认证。");
                     }
                     _backupFailCount = 0;
                     _nextBackupAttempt = 0;
@@ -1025,17 +1036,16 @@ namespace Suzu.Core
                     _missStreak = 0;
                     _missSince = -1;
                     _lastMissMs = 0;
-                    SetStatus((outcome.InternetOk ? "🟢 已连接 " : "🟡 已连接 ") +
-                              _cfg.DescribeBackup(net.Ssid) +
+                    SetStatus((outcome.InternetOk ? "🟢 已连接 " : "🟡 已连接 ") + label +
                               (outcome.InternetOk ? "（联网正常）" : "，但无 Internet 访问（可能需要网页认证）"));
-                    AppLog.Info("已切换到备用: " + net.Ssid);
-                    History.Add("切换备用", conn.Connected ? conn.Ssid : "未连接", net.Ssid,
-                                "主用不可用（候选信号 " + net.SignalQuality + "%）");
-                    RaiseNotify("已切换到备用网络", _cfg.DescribeBackup(net.Ssid));
+                    AppLog.Info("已切换到: " + net.Ssid);
+                    History.Add(toPrimary ? "重连主用" : "切换备用", conn.Connected ? conn.Ssid : "未连接", net.Ssid,
+                                "网络不可用，按优先级直连（候选信号 " + net.SignalQuality + "%）");
+                    RaiseNotify(toPrimary ? "已连上主用" : "已切换到备用网络", label);
                     return;
                 }
 
-                AppLog.Warn(net.Ssid + " 不可用，换下一个备用。");
+                AppLog.Warn(net.Ssid + " 不可用，换下一个候选。");
             }
 
             _backupFailCount++;

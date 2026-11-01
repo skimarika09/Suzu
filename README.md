@@ -185,6 +185,9 @@ dotnet publish .\Suzu.csproj -c Release -o .\dist
 
 # 自包含版（约 65 MB，免安装运行时）
 dotnet publish .\Suzu.csproj -c Release -o .\dist-selfcontained -p:SelfContained=true
+
+# 单元测试（xunit，用假 IWifiProvider/INetworkVerifier 驱动真实状态机，不需要网卡与管理员权限）
+dotnet test .\Suzu.Tests\Suzu.Tests.csproj
 ```
 
 运行需要**管理员权限**：Windows 11 上非管理员进程调用 `WlanQueryInterface / WlanScan` 一律返回 `5 (拒绝访问)`（程序会自动提示并停在只读状态，不会误切网络）。
